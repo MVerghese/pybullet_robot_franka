@@ -5,10 +5,14 @@ import numpy as np
 from pybullet_robot.bullet_robot import BulletRobot
 
 import logging
-from panda_robot_config import ROBOT_CONFIG
+
+ROBOT_CONFIG = {
+    'ee_link_idx': 7,
+    'ee_link_name': 'panda_hand'
+}
 
 description_path = os.path.dirname(
-    os.path.abspath(__file__)) + "/models/panda_arm.urdf"
+    os.path.abspath(__file__)) + "/models/panda_arm_with_gripper.urdf"
 # print description_path
 
 
@@ -73,7 +77,7 @@ class PandaArm(BulletRobot):
 
         self._joint_names = ['panda_joint%s' % (s,) for s in range(1, 8)]
 
-        BulletRobot.__init__(self, robot_description, uid=uid, **kwargs)
+        BulletRobot.__init__(self, robot_description, uid=uid, config=config, **kwargs)
 
         all_joint_dict = self.get_joint_dict()
 

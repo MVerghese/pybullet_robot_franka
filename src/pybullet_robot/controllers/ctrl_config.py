@@ -1,7 +1,7 @@
 import numpy as np
 
 KP_P = np.asarray([2000., 2000., 2000.]) # 6000
-KP_O = np.asarray([300., 300., 300.]) # 300
+KP_O = np.asarray([300., 300., 30.]) # 300
 OSImpConfig = {
     'P_pos': KP_P,
     'D_pos': 2*np.sqrt(KP_P),

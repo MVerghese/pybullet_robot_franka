@@ -1,7 +1,7 @@
 import numpy as np
-from utils import quatdiff_in_euler
-from os_controller import OSControllerBase
-from ctrl_config import OSHybConfig
+from .utils import quatdiff_in_euler
+from .os_controller import OSControllerBase
+from .ctrl_config import OSHybConfig
 
 
 class OSHybridController(OSControllerBase):
@@ -9,6 +9,16 @@ class OSHybridController(OSControllerBase):
     def __init__(self, robot, config=OSHybConfig, **kwargs):
 
         OSControllerBase.__init__(self, robot=robot, config=config, **kwargs)
+
+        # print("PARAMS")
+        # print(config['P_f'])
+        # print(config['P_tor'])
+        # print(config['I_f'])
+        # print(config['I_tor'])
+        # print(config['null_stiffness'])
+        # print(config['windup_guard'])
+        # print(config['ft_directions'])
+        # print("END PARAMS")
 
         self._P_ft = np.diag(np.append(config['P_f'],config['P_tor']))
         self._I_ft = np.diag(np.append(config['I_f'],config['I_tor']))
@@ -52,6 +62,7 @@ class OSHybridController(OSControllerBase):
         F_motion = self._pos_dir.dot(np.vstack([self._P_pos.dot(delta_pos), self._P_ori.dot(delta_ori)]) - \
                                      np.vstack([self._D_pos.dot(curr_vel.reshape([3, 1])),
                                                 self._D_ori.dot(curr_omg.reshape([3, 1]))]))
+        print("Position control values: ", F_motion.flatten())
 
         ## FORCE CONTROL
         last_time = self._last_time if self._last_time is not None else self._sim_time
@@ -59,6 +70,8 @@ class OSHybridController(OSControllerBase):
         delta_time = max(0.,current_time - last_time)
 
         curr_ft = self._robot.get_ee_wrench(local=False).reshape([6, 1])
+        print("FT: ", curr_ft.flatten())
+        # curr_ft[5,0] = 0.0 # remove torque about z-axis
 
         delta_ft = self._ft_dir.dot(self._goal_ft - curr_ft)
         self._I_term += delta_ft * delta_time
@@ -68,6 +81,8 @@ class OSHybridController(OSControllerBase):
 
         # Desired task-space force control PI law
         F_force = self._P_ft.dot(delta_ft) + self._I_ft.dot(self._I_term) + self._goal_ft
+
+        print("Force control values: ", F_force.flatten())
         
         F = F_motion - F_force # force control is subtracted because the computation is for the counter force
 
@@ -75,15 +90,21 @@ class OSHybridController(OSControllerBase):
                         np.linalg.norm(delta_ft[3:]), np.linalg.norm(delta_ft[3:])])
 
         J = self._robot.jacobian()
+        # print("Jacobian shape: ", J.shape)
+        J = J[:,:7]
 
         self._last_time = current_time
 
         cmd = np.dot(J.T, F)
 
+        # print(self._null_Kp.shape)
+
         null_space_filter = self._null_Kp.dot(
             np.eye(7) - J.T.dot(np.linalg.pinv(J.T, rcond=1e-3)))
 
-        cmd += null_space_filter.dot((self._robot._tuck-self._robot.angles()).reshape([7,1]))
+        # print(self._robot._tuck)
+        # print(self._robot.angles())
+        cmd += null_space_filter.dot((self._robot._tuck-self._robot.angles()[:7]).reshape([7,1]))
         # print null_space_filter.dot(
             # (self._robot._tuck-self._robot.angles()).reshape([7, 1]))
         # joint torques to be commanded

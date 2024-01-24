@@ -14,6 +14,8 @@ class BulletRobot(object):
         :type config: dict
         :type uid: int
         """
+        print("CONFIG")
+        print(config)
 
         if uid is None:
             uid = pb.connect(pb.GUI)
@@ -66,6 +68,14 @@ class BulletRobot(object):
             self._ee_link_idx = config['ee_link_idx']
         else:
             self._ee_link_idx, self._ee_link_name = self._use_last_defined_link()
+        print("End effector: ", self._ee_link_name, self._ee_link_idx)
+
+        # print("LINK INFO")
+        # for i in range(pb.getNumJoints(self._id, physicsClientId=self._uid)):
+        #     joint_information = pb.getJointInfo(
+        #     self._id, self._all_joints[i], physicsClientId=self._uid)
+        #     print(joint_information[-1]+1, joint_information[-5])
+        # print("END LINK INFO")
 
         self._joint_limits = self.get_joint_limits()
 
@@ -171,6 +181,7 @@ class BulletRobot(object):
                                                                      self.n_joints()).tolist(),
                                                                  objAccelerations=np.zeros(self.n_joints()).tolist(), physicsClientId=self._uid)
 
+        # print("Jacobian shapes: ", np.array(linear_jacobian).shape, np.array(angular_jacobian).shape)
         jacobian = np.vstack(
             [np.array(linear_jacobian), np.array(angular_jacobian)])
 

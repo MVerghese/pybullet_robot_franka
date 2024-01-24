@@ -1,9 +1,11 @@
 from collections import deque
 import numpy as np
 import pybullet as pb
-from pybullet_robot.worlds import SimpleWorld, add_PyB_models_to_path
-from pybullet_robot.robots import PandaArm
-from pybullet_robot.controllers import OSHybridController
+from pybullet_robot.worlds import add_PyB_models_to_path
+from pybullet_robot.worlds.simple_world import SimpleWorld
+from pybullet_robot.robots.bullet_panda.panda_robot import PandaArm
+from pybullet_robot.controllers.os_hyb_ctrl import OSHybridController
+
 import time
 import matplotlib.pyplot as plt
 import threading
@@ -24,7 +26,10 @@ def plot_thread():
             break
 
 if __name__ == "__main__":
+    np.set_printoptions(linewidth=np.inf)
+    print("Setting up panda arm")
     robot = PandaArm()
+    robot.set_ft_sensor_at(7)
 
     add_PyB_models_to_path()
 
@@ -34,6 +39,12 @@ if __name__ == "__main__":
     cube = pb.loadURDF('cube_small.urdf', useFixedBase=True, globalScaling=1.)
     pb.resetBasePositionAndOrientation(
         table, [0.4, 0., 0.0], [0, 0, -0.707, 0.707])
+
+    cam_view_matrix = pb.computeViewMatrix([0.,0.,1.], [0.,0.,.5], [0.,1.,0.])
+    cam_proj_matrix = pb.computeProjectionMatrixFOV(fov=60, aspect=1., nearVal=0.01, farVal=100.)
+
+
+
 
     objects = {'plane': plane,
                'table': table}
@@ -47,7 +58,7 @@ if __name__ == "__main__":
 
     controller = OSHybridController(robot)
 
-    print ("started")
+    print("started")
 
     z_traj = np.linspace(goal_pos[2], 0.3, 550)
 
@@ -60,77 +71,91 @@ if __name__ == "__main__":
 
     done = False
     plot_t.start()
-
-    i = 0
-    f_ctrl = True
-    while i < z_traj.size:
-        now = time.time()
-
-        ee_pos, _ = world.robot.ee_pose()
-        wrench = world.robot.get_ee_wrench(local=False)
-        # print wrench
-        if abs(wrench[2]) >= 10.:
-            break
-
-        goal_pos[2] = z_traj[i]
-
-        controller.update_goal(goal_pos, goal_ori)
-
-        fx_deque.append(wrench[0])
-        fy_deque.append(wrench[1])
-        fz_deque.append(wrench[2])
-        
-        elapsed = time.time() - now
-        sleep_time = (1./slow_rate) - elapsed
-        if sleep_time > 0.0:
-            time.sleep(sleep_time)
-
-        i += 1
-    else:
-        print ("Never reached force threshold for switching controller")
-        f_ctrl = False
-    
-    if f_ctrl:
-    
-        print ("Switching to force control along Z axis")
-        y_traj = np.linspace(goal_pos[1], goal_pos[1]-0.2, 400)
-        
-        controller.change_ft_directions([0,0,1,0,0,0])
-        target_force = -21.
-
-        p_slider = pb.addUserDebugParameter('p_f',0.1,2.,controller._P_ft[2, 2])
-        i_slider = pb.addUserDebugParameter('i_f',0.0,100.,controller._I_ft[2, 2])
-        w_slider = pb.addUserDebugParameter('windup',0.0,100.,controller._windup_guard[2, 0])
-
-        
+    try:
         i = 0
-        while i < y_traj.size:
+        f_ctrl = True
+        while i < z_traj.size:
             now = time.time()
 
             ee_pos, _ = world.robot.ee_pose()
             wrench = world.robot.get_ee_wrench(local=False)
             # print wrench
-            goal_pos[1] = y_traj[i]
+            if abs(wrench[2]) >= 10.:
+                break
 
-            controller._P_ft[2, 2] = pb.readUserDebugParameter(p_slider)
-            controller._I_ft[2, 2] = pb.readUserDebugParameter(i_slider)
-            controller._windup_guard[2, 0] = pb.readUserDebugParameter(w_slider)
+            goal_pos[2] = z_traj[i]
 
-            controller.update_goal(
-                goal_pos, goal_ori, np.asarray([0., 0., target_force]))
+            controller.update_goal(goal_pos, goal_ori)
 
             fx_deque.append(wrench[0])
             fy_deque.append(wrench[1])
             fz_deque.append(wrench[2])
 
+            camera_image = pb.getCameraImage(640, 480, cam_view_matrix, cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL)
+            
             elapsed = time.time() - now
             sleep_time = (1./slow_rate) - elapsed
             if sleep_time > 0.0:
                 time.sleep(sleep_time)
 
-            if i < y_traj.size-1:
-                i += 1
 
-    controller.stop_controller_thread()
-    done = True
-    plot_t.join()
+            i += 1
+        else:
+            print("Never reached force threshold for switching controller")
+            f_ctrl = False
+        
+
+        if f_ctrl:
+        
+            print("Switching to force control along Z axis")
+            y_traj = np.linspace(goal_pos[1], goal_pos[1]-0.2, 400)
+            
+            controller.change_ft_directions([0,0,1,0,0,0])
+            target_force = -21.
+
+            p_slider = pb.addUserDebugParameter('p_f',0.1,2.,controller._P_ft[2, 2])
+            i_slider = pb.addUserDebugParameter('i_f',0.0,100.,controller._I_ft[2, 2])
+            w_slider = pb.addUserDebugParameter('windup',0.0,100.,controller._windup_guard[2, 0])
+
+            
+            i = 0
+            while i < y_traj.size:
+                now = time.time()
+
+                ee_pos, _ = world.robot.ee_pose()
+                wrench = world.robot.get_ee_wrench(local=False)
+                # print wrench
+                goal_pos[1] = y_traj[i]
+
+                controller._P_ft[2, 2] = pb.readUserDebugParameter(p_slider)
+                controller._I_ft[2, 2] = pb.readUserDebugParameter(i_slider)
+                controller._windup_guard[2, 0] = pb.readUserDebugParameter(w_slider)
+
+                controller.update_goal(
+                    goal_pos, goal_ori, np.asarray([0., 0., target_force]))
+
+                fx_deque.append(wrench[0])
+                fy_deque.append(wrench[1])
+                fz_deque.append(wrench[2])
+
+                elapsed = time.time() - now
+                sleep_time = (1./slow_rate) - elapsed
+                if sleep_time > 0.0:
+                    time.sleep(sleep_time)
+
+                if i < y_traj.size-1:
+                    i += 1
+
+                camera_image = pb.getCameraImage(640, 480, cam_view_matrix, cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL)
+
+                # plt.clf()
+                # camera_image = pb.getCameraImage(640, 480, cam_view_matrix, cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL)
+                # plt.imshow(camera_image[2])
+                # plt.draw()
+                # plt.pause(0.000001)
+    finally:
+
+
+        controller.stop_controller_thread()
+        done = True
+        plot_t.join()

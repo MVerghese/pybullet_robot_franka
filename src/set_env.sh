@@ -7,4 +7,4 @@ PB_ROBOT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 export PYTHONPATH=$PB_ROBOT_PATH:$PYTHONPATH
 
-echo -e "\nAdded PyBullet ROBOT to python path. Access using `import pybullet_robot` from python env.\n"
+# echo -e "\nAdded PyBullet ROBOT to python path. Access using `import pybullet_robot` from python env.\n"
