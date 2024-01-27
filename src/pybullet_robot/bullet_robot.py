@@ -70,6 +70,7 @@ class BulletRobot(object):
             self._ee_link_idx, self._ee_link_name = self._use_last_defined_link()
         print("End effector: ", self._ee_link_name, self._ee_link_idx)
 
+
         # print("LINK INFO")
         # for i in range(pb.getNumJoints(self._id, physicsClientId=self._uid)):
         #     joint_information = pb.getJointInfo(
@@ -96,7 +97,8 @@ class BulletRobot(object):
             self._ft_joints.remove(joint_id)
         elif joint_id not in self._ft_joints and enable:
             self._ft_joints.append(joint_id)
-        print ("FT sensor at joint", joint_id)
+        jointName = pb.getJointInfo(self._id, joint_id, physicsClientId=self._uid)[1]
+        print ("FT sensor at joint", joint_id, jointName)
         pb.enableJointForceTorqueSensor(self._id, joint_id, enable, self._uid)
 
     def __del__(self):
@@ -284,6 +286,20 @@ class BulletRobot(object):
                                                      targetOrientation=orientation, physicsClientId=self._uid)
 
         return np.array(solution), solution is None
+
+    def inverse_dynamics(self, joint_angles, joint_velocities, joint_accelerations):
+        """
+
+        :param joint_angles: joint angles
+        :param joint_velocities: joint velocities
+        :param joint_accelerations: joint accelerations
+        :return: joint torques
+        """
+
+        return np.array(pb.calculateInverseDynamics(self._id,
+                                                    joint_angles.tolist(),
+                                                    joint_velocities.tolist(),
+                                                    joint_accelerations.tolist(), physicsClientId=self._uid))
 
     def q_mean(self):
         """

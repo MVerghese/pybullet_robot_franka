@@ -1,6 +1,7 @@
 from collections import deque
 import numpy as np
 import pybullet as pb
+import pybullet_data
 from pybullet_robot.worlds import add_PyB_models_to_path
 from pybullet_robot.worlds.simple_world import SimpleWorld
 from pybullet_robot.robots.bullet_panda.panda_robot import PandaArm
@@ -9,7 +10,7 @@ from pybullet_robot.controllers.os_hyb_ctrl import OSHybridController
 import time
 import matplotlib.pyplot as plt
 import threading
-
+import sys
 
 def plot_thread():
 
@@ -33,21 +34,26 @@ if __name__ == "__main__":
 
     add_PyB_models_to_path()
 
+    pb.setGravity(0, 0, -9.81)
+
     plane = pb.loadURDF('plane.urdf')
     table = pb.loadURDF('table/table.urdf',
                         useFixedBase=True, globalScaling=0.5)
+
+    pan = pb.loadURDF('../assets/frying_pan/frying_pan.urdf',[.5,0.,1.], useFixedBase = False, globalScaling=0.5)
     cube = pb.loadURDF('cube_small.urdf', useFixedBase=True, globalScaling=1.)
     pb.resetBasePositionAndOrientation(
         table, [0.4, 0., 0.0], [0, 0, -0.707, 0.707])
 
-    cam_view_matrix = pb.computeViewMatrix([0.,0.,1.], [0.,0.,.5], [0.,1.,0.])
+    cam_view_matrix = pb.computeViewMatrix([.5,0.,1.], [.5,0.,.5], [0.,1.,0.])
     cam_proj_matrix = pb.computeProjectionMatrixFOV(fov=60, aspect=1., nearVal=0.01, farVal=100.)
 
 
 
 
     objects = {'plane': plane,
-               'table': table}
+               'table': table,
+               'pan':pan}
 
     world = SimpleWorld(robot, objects)
     pb.changeDynamics(world.objects.table, -1,
@@ -80,7 +86,8 @@ if __name__ == "__main__":
             ee_pos, _ = world.robot.ee_pose()
             wrench = world.robot.get_ee_wrench(local=False)
             # print wrench
-            if abs(wrench[2]) >= 10.:
+            if abs(wrench[2]) >= 20.:
+                print("Force threshold reached")
                 break
 
             goal_pos[2] = z_traj[i]
@@ -98,13 +105,14 @@ if __name__ == "__main__":
             if sleep_time > 0.0:
                 time.sleep(sleep_time)
 
+            print("ITERATION: ",i)
+
 
             i += 1
         else:
             print("Never reached force threshold for switching controller")
             f_ctrl = False
         
-
         if f_ctrl:
         
             print("Switching to force control along Z axis")

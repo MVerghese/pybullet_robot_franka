@@ -173,6 +173,22 @@ class PandaArm(BulletRobot):
         """
         return self.inverse_kinematics(position, orientation)[0]
 
+    # def inverse_dynamics(self, joint_angles, joint_velocities, joint_accelerations):
+    #     """
+    #     :return: Joint torques for given joint angles, velocities and accelerations.
+    #     :rtype: np.ndarray
+
+    #     :param joint_angles: joint angles
+    #     :param joint_velocities: joint velocities
+    #     :param joint_accelerations: joint accelerations
+
+    #     :type joint_angles: [float] * self._nq
+    #     :type joint_velocities: [float] * self._nq
+    #     :type joint_accelerations: [float] * self._nq
+
+    #     """
+    #     return self.inverse_dynamics(joint_angles, joint_velocities, joint_accelerations)
+
     def set_sampling_rate(self, sampling_rate=100):
         """
         (Does Nothing. Left here for maintaining structure of PandaArm class from panda_robot package)

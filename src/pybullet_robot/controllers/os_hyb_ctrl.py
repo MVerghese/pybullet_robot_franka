@@ -6,7 +6,7 @@ from .ctrl_config import OSHybConfig
 
 class OSHybridController(OSControllerBase):
 
-    def __init__(self, robot, config=OSHybConfig, **kwargs):
+    def __init__(self, robot, config=OSHybConfig, gravity_comp = True, **kwargs):
 
         OSControllerBase.__init__(self, robot=robot, config=config, **kwargs)
 
@@ -28,6 +28,9 @@ class OSHybridController(OSControllerBase):
         self._windup_guard = np.asarray(config['windup_guard']).reshape([6,1])
 
         self.change_ft_directions(np.asarray(config['ft_directions'], int))
+
+        self._gravity_comp = gravity_comp
+        self._velocity_damping = .5
 
     def change_ft_directions(self, dims):
         self._mutex.acquire()
@@ -107,6 +110,15 @@ class OSHybridController(OSControllerBase):
         cmd += null_space_filter.dot((self._robot._tuck-self._robot.angles()[:7]).reshape([7,1]))
         # print null_space_filter.dot(
             # (self._robot._tuck-self._robot.angles()).reshape([7, 1]))
+        # cmd = np.zeros((7,1))
+
+        if self._gravity_comp:
+            joint_states = self._robot.get_joint_state()
+            # joint_states = [np.zeros(9),np.zeros(9)]
+            grav_comp_term = self._robot.inverse_dynamics(joint_states[0], joint_states[1]*self._velocity_damping, np.zeros(9))[:7]
+            print("Grav comp: ", grav_comp_term)
+            cmd += grav_comp_term.reshape([7,1])
+
         # joint torques to be commanded
         return cmd, error
 
