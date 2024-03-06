@@ -2,6 +2,8 @@ import quaternion
 
 
 def quatdiff_in_euler(quat_curr, quat_des):
+    print("quat_curr: ", type(quat_curr))
+    print("quat_des: ", type(quat_des))
 
     curr_mat = quaternion.as_rotation_matrix(quat_curr)
     des_mat = quaternion.as_rotation_matrix(quat_des)

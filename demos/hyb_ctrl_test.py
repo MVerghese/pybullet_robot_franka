@@ -26,6 +26,36 @@ def plot_thread():
         if done:
             break
 
+
+def create_fixed_constraint(obj1,obj2, obj1_link = -1, obj2_link = -1):
+    """
+    Creates a fixed constraint between two objects using the current relative pose between them.
+    """
+    # print(pb.getNumJoints(obj1))
+    # print(obj1,obj1_link)
+    # print(pb.getLinkState(obj1, obj1_link))
+    # print(pb.getNumJoints(obj2))
+    # print(obj2,obj2_link)
+    # print(pb.getLinkState(obj2, obj2_link))
+    if obj1_link == -1:
+        w_obj1_pos, w_obj1_ori = pb.getBasePositionAndOrientation(obj1)
+    else:
+        w_obj1_pos, w_obj1_ori = pb.getLinkState(obj1, obj1_link)[:2]
+    if obj2_link == -1:
+        w_obj2_pos, w_obj2_ori = pb.getBasePositionAndOrientation(obj2)
+    else:
+        w_obj2_pos, w_obj2_ori = pb.getLinkState(obj2, obj2_link)[:2]
+
+    obj2_w_pos, obj2_w_ori = pb.invertTransform(w_obj2_pos, w_obj2_ori)
+
+    obj2_obj1_pos, obj2_obj1_ori = pb.multiplyTransforms(obj2_w_pos, obj2_w_ori, w_obj1_pos, w_obj1_ori)
+
+    obj1_obj2_pos, obj1_obj2_ori = pb.invertTransform(obj2_obj1_pos, obj2_obj1_ori)
+
+    return pb.createConstraint(obj1, obj1_link, obj2, obj2_link, pb.JOINT_FIXED, [0,0,0], obj1_obj2_pos, [0,0,0], parentFrameOrientation=obj1_obj2_ori)
+    
+
+
 if __name__ == "__main__":
     np.set_printoptions(linewidth=np.inf)
     print("Setting up panda arm")
@@ -39,13 +69,16 @@ if __name__ == "__main__":
     plane = pb.loadURDF('plane.urdf')
     table = pb.loadURDF('table/table.urdf',
                         useFixedBase=True, globalScaling=0.5)
+    print('Plane ID: ', plane)
+    print('Table ID: ', table)
 
-    pan = pb.loadURDF('../assets/frying_pan/frying_pan.urdf',[.5,0.,1.], useFixedBase = False, globalScaling=0.5)
+    pan = pb.loadURDF('../assets/frying_pan/frying_pan.urdf',[.5,0.,1.], useFixedBase = False, useMaximalCoordinates = True, flags=pb.URDF_USE_INERTIA_FROM_FILE, globalScaling=0.5)
+    spatula = pb.loadURDF('../assets/spatula/spatula.urdf',[.5,0.,1.1], useFixedBase = False, useMaximalCoordinates = True, flags=pb.URDF_USE_INERTIA_FROM_FILE, globalScaling=.7)
     cube = pb.loadURDF('cube_small.urdf', useFixedBase=True, globalScaling=1.)
     pb.resetBasePositionAndOrientation(
         table, [0.4, 0., 0.0], [0, 0, -0.707, 0.707])
 
-    cam_view_matrix = pb.computeViewMatrix([.5,0.,1.], [.5,0.,.5], [0.,1.,0.])
+    cam_view_matrix = pb.computeViewMatrix([.5,0.,1.], [.5,0.,.5], [1.,0.,0.])
     cam_proj_matrix = pb.computeProjectionMatrixFOV(fov=60, aspect=1., nearVal=0.01, farVal=100.)
 
 
@@ -53,7 +86,8 @@ if __name__ == "__main__":
 
     objects = {'plane': plane,
                'table': table,
-               'pan':pan}
+               'pan':pan,
+               'spatula':spatula}
 
     world = SimpleWorld(robot, objects)
     pb.changeDynamics(world.objects.table, -1,
@@ -61,6 +95,7 @@ if __name__ == "__main__":
     slow_rate = 100.
 
     goal_pos, goal_ori = world.robot.ee_pose()
+    print(goal_pos)
 
     controller = OSHybridController(robot)
 
@@ -68,15 +103,40 @@ if __name__ == "__main__":
 
     z_traj = np.linspace(goal_pos[2], 0.3, 550)
 
-    plot_t = threading.Thread(target=plot_thread)
-    fx_deque = deque([0],maxlen=1000)
-    fy_deque = deque([0],maxlen=1000)
-    fz_deque = deque([0],maxlen=1000)
+    # plot_t = threading.Thread(target=plot_thread)
+    # fx_deque = deque([0],maxlen=1000)
+    # fy_deque = deque([0],maxlen=1000)
+    # fz_deque = deque([0],maxlen=1000)
 
+    
+    ee_pos, ee_ori  = pb.getLinkState(0,7)[:2]
+    ee_pos = np.array(ee_pos)
+    ee_pos += [.07,0.,-0.09]
+    # spatula_pos, spatula_ori = pb.multiplyTransforms(ee_pos,ee_ori,[0,0,0],pb.getQuaternionFromEuler([np.pi/2,0,np.pi/2]))
+    # spatula_pos = np.array(spatula_pos)
+    # spatula_pos[2] += .5
+    num_bot_joints = pb.getNumJoints(0)
+    pb.resetJointState(0,num_bot_joints-1,0.04)
+    pb.resetJointState(0,num_bot_joints-2,0.04)
+
+
+    pb.resetBasePositionAndOrientation(spatula, ee_pos, pb.getQuaternionFromEuler([0,np.pi,np.pi/2]))
+    print("spatula pos: ",pb.getBasePositionAndOrientation(spatula))
+    create_fixed_constraint(0, world.objects.spatula, obj1_link = 7)
+    create_fixed_constraint(world.objects.table, world.objects.pan)
+
+    time.sleep(1)
+    print("spatula pos: ",pb.getBasePositionAndOrientation(spatula))
     controller.start_controller_thread()
+    pb.setJointMotorControl2(0,num_bot_joints-1,pb.TORQUE_CONTROL,force=-20)
+    pb.setJointMotorControl2(0,num_bot_joints-2,pb.TORQUE_CONTROL,force=-20)
+
+
+
+    
 
     done = False
-    plot_t.start()
+    # plot_t.start()
     try:
         i = 0
         f_ctrl = True
@@ -94,11 +154,14 @@ if __name__ == "__main__":
 
             controller.update_goal(goal_pos, goal_ori)
 
-            fx_deque.append(wrench[0])
-            fy_deque.append(wrench[1])
-            fz_deque.append(wrench[2])
+            # fx_deque.append(wrench[0])
+            # fy_deque.append(wrench[1])
+            # fz_deque.append(wrench[2])
 
             camera_image = pb.getCameraImage(640, 480, cam_view_matrix, cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL)
+            # print(np.shape(camera_image[4]))
+            # plt.imshow(camera_image[4])
+            # plt.show()
             
             elapsed = time.time() - now
             sleep_time = (1./slow_rate) - elapsed
@@ -126,6 +189,8 @@ if __name__ == "__main__":
             w_slider = pb.addUserDebugParameter('windup',0.0,100.,controller._windup_guard[2, 0])
 
             
+
+            
             i = 0
             while i < y_traj.size:
                 now = time.time()
@@ -142,9 +207,9 @@ if __name__ == "__main__":
                 controller.update_goal(
                     goal_pos, goal_ori, np.asarray([0., 0., target_force]))
 
-                fx_deque.append(wrench[0])
-                fy_deque.append(wrench[1])
-                fz_deque.append(wrench[2])
+                # fx_deque.append(wrench[0])
+                # fy_deque.append(wrench[1])
+                # fz_deque.append(wrench[2])
 
                 elapsed = time.time() - now
                 sleep_time = (1./slow_rate) - elapsed
@@ -155,6 +220,7 @@ if __name__ == "__main__":
                     i += 1
 
                 camera_image = pb.getCameraImage(640, 480, cam_view_matrix, cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL)
+                
 
                 # plt.clf()
                 # camera_image = pb.getCameraImage(640, 480, cam_view_matrix, cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL)
@@ -166,4 +232,4 @@ if __name__ == "__main__":
 
         controller.stop_controller_thread()
         done = True
-        plot_t.join()
+        # plot_t.join()
