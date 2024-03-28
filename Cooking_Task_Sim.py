@@ -14,6 +14,8 @@ assets_path = "/home/mverghese/MBLearning/pybullet_robot/assets/"
 object_info = {}
 object_info['frying_pan'] = {'path': 'assets/frying_pan.urdf', 'scale': 0.5, 'ref_obj': True,'grasp_obj': False,'init_pos':[.5,0.,1.]}
 object_info['spatula'] = {'path': 'assets/spatula.urdf', 'scale': 0.5, 'ref_obj': False,'grasp_obj': True,'init_pos':[.5,0.,1.1], 'gripper_offset': [.07,0.,-0.09],'obj_rot':[0,np.pi,np.pi/2]}
+task_objs = {}
+task_objs['Stir'] = ['frying_pan','spatula']
 
 def create_fixed_constraint(obj1,obj2, obj1_link = -1, obj2_link = -1):
 	"""
@@ -42,7 +44,7 @@ def create_fixed_constraint(obj1,obj2, obj1_link = -1, obj2_link = -1):
 
 	return pb.createConstraint(obj1, obj1_link, obj2, obj2_link, pb.JOINT_FIXED, [0,0,0], obj1_obj2_pos, [0,0,0], parentFrameOrientation=obj1_obj2_ori)
 
-class CookingTask:
+class CookingSim:
 	def __init__(self,obj_list):
 
 		self.robot = PandaArm()
@@ -95,12 +97,22 @@ class CookingTask:
 				pb.resetJointState(0,num_bot_joints-2,0.04)
 				pb.resetBasePositionAndOrientation(self.objects[noun], ee_pos, pb.getQuaternionFromEuler(object_info[noun]['obj_rot']))
 				create_fixed_constraint(0, self.objects[noun], obj1_link = 7)
+
 		self.controller.start_controller_thread()
 		pb.setJointMotorControl2(0,num_bot_joints-1,pb.TORQUE_CONTROL,force=-20)
 		pb.setJointMotorControl2(0,num_bot_joints-2,pb.TORQUE_CONTROL,force=-20)
 
+		self.init_world_state = pb.saveState()
+
+	def reset_world_state(self):
+		pb.restoreState(self.init_world_state)
+
 	def get_camera_info(self):
 		return(pb.getCameraImage(640, 480, self.cam_view_matrix, self.cam_proj_matrix, renderer=pb.ER_BULLET_HARDWARE_OPENGL))
+
+	def determine_obj_contact(self, obj1, obj2):
+		contact_points = pb.getContactPoints(obj1, obj2)
+		return(contact_points)
 
 	def get_vis_object_pose(self, camera_image, ref_obj, act_obj):
 		ref_obj_id = self.nouns.index(ref_obj)
@@ -176,6 +188,58 @@ class CookingTask:
 		finally:
 			self.controller.stop_controller_thread()
 
+class StirReward:
+	def __init__(self, sim):
+		self.stir_points = []
+		self.sim = sim
+
+	def compute_reward(self):
+		contact_points = self.sim.determine_obj_contact(self.sim.objects['frying_pan'], self.sim.objects['spatula'])
+		return(len(contact_points))
+
+
+reward_models = {}
+reward_models['Stir'] = StirReward
+
+class CookingEnv:
+	def __init__(self, task_id = "Stir"):
+		self.task_id = task_id
+		self.task = None
+		self.task_objs = task_objs[task_id]
+		self.sim = CookingSim(self.task_objs)
+		self.reward = reward_models[task_id](self.sim)
+
+	def gen_obs(self,return_cam = True, return_proprioception = True):
+		obs = {}
+		if return_cam:
+			obs['camera'] = self.sim.get_camera_info()
+		if return_proprioception:
+			obs['proprioception'] = self.sim.robot.ee_pose()
+		return(obs)
+
+	def step(self,action):
+		# Action is a 3 tuple of (goal_pos, goal_ori, force_axes)
+		goal_pos, goal_ori, force_axes = action
+		self.sim.controller.update_goal(goal_pos, goal_ori, goal_force = force_axes[:3], goal_torque = force_axes[3:])
+		# add force axes
+		unit_force_axes = [1 if axis != 0 else 0 for axis in force_axes]
+		print(unit_force_axes)
+		self.sim.controller.change_ft_directions(unit_force_axes)
+		obs = self.gen_obs()
+		reward = self.reward.compute_reward()
+		done = False
+		return(obs, reward, done, {})
+
+	def reset(self):
+		obs = self.gen_obs()
+		self.sim.reset_world_state()
+		return(obs)
+		
+
+
+
+
+
 
 def create_task(task_id):
 	pass
@@ -183,8 +247,18 @@ def create_task(task_id):
 
 
 def run_experiment():
-	task = CookingTask(['frying_pan','spatula'])
-	task.run_test_sim()
+	env = CookingEnv()
+	obs = env.reset()
+	goal = obs['proprioception']
+	# print(obs)
+	done = False
+	while not done:
+		action = [goal[0], goal[1], np.zeros(6,dtype=int)]
+		goal[0][2] -= 0.01
+		obs, reward, done, _ = env.step(action)
+		print("Reward: ", reward)
+		# print("Observation: ", obs)
+		# print("Done: ", done)
 
 if __name__ == '__main__':
 	run_experiment()

@@ -121,7 +121,7 @@ class OSHybridController(OSControllerBase):
 
         # joint torques to be commanded
 
-        print("COMMAND TORQUES: ", cmd.flatten())
+        # print("COMMAND TORQUES: ", cmd.flatten())
         return cmd, error
 
     def _initialise_goal(self):
