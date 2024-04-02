@@ -12,10 +12,27 @@ import threading
 
 assets_path = "/home/mverghese/MBLearning/pybullet_robot/assets/"
 object_info = {}
-object_info['frying_pan'] = {'path': 'assets/frying_pan.urdf', 'scale': 0.5, 'ref_obj': True,'grasp_obj': False,'init_pos':[.5,0.,1.]}
-object_info['spatula'] = {'path': 'assets/spatula.urdf', 'scale': 0.5, 'ref_obj': False,'grasp_obj': True,'init_pos':[.5,0.,1.1], 'gripper_offset': [.07,0.,-0.09],'obj_rot':[0,np.pi,np.pi/2]}
+object_info['frying_pan'] = {'path': 'assets/frying_pan.urdf', 'scale': 0.5, 'ref_obj': True,'grasp_obj': False,'init_pos':[.5,0.,.5]}
+object_info['spatula'] = {'path': 'assets/spatula.urdf', 'scale': 0.5, 'ref_obj': False,'grasp_obj': True,'init_pos':[.5,0.,.6], 'gripper_offset': [.07,0.,-0.09],'obj_rot':[0,np.pi,np.pi/2]}
 task_objs = {}
-task_objs['Stir'] = ['frying_pan','spatula']
+task_objs['Stir'] = ['frying_pan','spatula','peppers']
+
+def create_peppers(count):
+	pepper_collision = pb.createCollisionShape(pb.GEOM_BOX, halfExtents=[0.005,0.005,0.005])
+	red_pepper_visual = pb.createVisualShape(pb.GEOM_BOX, halfExtents=[0.005,0.005,0.003], rgbaColor=[1,0,0,1])
+	yellow_pepper_visual = pb.createVisualShape(pb.GEOM_BOX, halfExtents=[0.005,0.005,0.003], rgbaColor=[1,1,0,1])
+	red_xyz = [.5,0.03,.7]
+	yellow_xyz = [.5,-0.03,.7]
+	red_positions = [[red_xyz[0],red_xyz[1],red_xyz[2]+0.01*i] for i in range(count)]
+	yellow_positions = [[yellow_xyz[0],yellow_xyz[1],yellow_xyz[2]+0.01*i] for i in range(count)]
+	red_peppers = pb.createMultiBody(baseMass=.01, baseCollisionShapeIndex=pepper_collision, baseVisualShapeIndex=red_pepper_visual, batchPositions=red_positions)
+	yellow_peppers = pb.createMultiBody(baseMass=.01, baseCollisionShapeIndex=pepper_collision, baseVisualShapeIndex=yellow_pepper_visual, batchPositions=yellow_positions)
+	print("Created peppers")
+	print(red_peppers,yellow_peppers)
+	return(red_peppers, yellow_peppers)
+
+
+
 
 def create_fixed_constraint(obj1,obj2, obj1_link = -1, obj2_link = -1):
 	"""
@@ -62,16 +79,27 @@ class CookingSim:
 
 		self.objects = {"plane": plane, "table": table}
 		for obj in obj_list:
-			info = object_info[obj]
-			object_path = assets_path + obj +'/' + obj + '.urdf'
-			print(object_path)
-			self.objects[obj] = pb.loadURDF(object_path,info['init_pos'],
-										useFixedBase=False, globalScaling=info['scale'])
+			if obj in object_info.keys():
+				info = object_info[obj]
+				object_path = assets_path + obj +'/' + obj + '.urdf'
+				print(object_path)
+				self.objects[obj] = pb.loadURDF(object_path,info['init_pos'],
+											useFixedBase=False, globalScaling=info['scale'])
+			elif obj == "peppers":
+				red_peppers, yellow_peppers = create_peppers(10)
+				self.objects['red_peppers'] = red_peppers
+				self.objects['yellow_peppers'] = yellow_peppers
 
 		self.nouns = [None]*(len(self.objects)+1)
 		self.nouns[0] = "robot"
 		for obj in self.objects.keys():
-			self.nouns[self.objects[obj]] = obj
+			print(obj)
+			if isinstance(self.objects[obj], int):
+				self.nouns[self.objects[obj]] = obj
+			elif isinstance(self.objects[obj], list):
+				for i in range(len(self.objects[obj])):
+					self.nouns[self.objects[obj][i]] = obj + str(i)
+
 
 		
 
@@ -97,6 +125,8 @@ class CookingSim:
 				pb.resetJointState(0,num_bot_joints-2,0.04)
 				pb.resetBasePositionAndOrientation(self.objects[noun], ee_pos, pb.getQuaternionFromEuler(object_info[noun]['obj_rot']))
 				create_fixed_constraint(0, self.objects[noun], obj1_link = 7)
+			
+
 
 		self.controller.start_controller_thread()
 		pb.setJointMotorControl2(0,num_bot_joints-1,pb.TORQUE_CONTROL,force=-20)
@@ -194,8 +224,16 @@ class StirReward:
 		self.sim = sim
 
 	def compute_reward(self):
-		contact_points = self.sim.determine_obj_contact(self.sim.objects['frying_pan'], self.sim.objects['spatula'])
-		return(len(contact_points))
+		red_pepper_pos = [pb.getBasePositionAndOrientation(pepper)[0] for pepper in self.sim.objects['red_peppers']]
+		yellow_pepper_pos = [pb.getBasePositionAndOrientation(pepper)[0] for pepper in self.sim.objects['yellow_peppers']]
+		# compute the average distance between red and yellow peppers
+		red_pepper_pos = np.array(red_pepper_pos)
+		yellow_pepper_pos = np.array(yellow_pepper_pos)
+		red_pepper_pos = np.mean(red_pepper_pos, axis = 0)
+		yellow_pepper_pos = np.mean(yellow_pepper_pos, axis = 0)
+		dist = np.linalg.norm(red_pepper_pos - yellow_pepper_pos)
+		reward = 1-dist
+		return(reward)
 
 
 reward_models = {}
@@ -223,7 +261,7 @@ class CookingEnv:
 		self.sim.controller.update_goal(goal_pos, goal_ori, goal_force = force_axes[:3], goal_torque = force_axes[3:])
 		# add force axes
 		unit_force_axes = [1 if axis != 0 else 0 for axis in force_axes]
-		print(unit_force_axes)
+		# print(unit_force_axes)
 		self.sim.controller.change_ft_directions(unit_force_axes)
 		obs = self.gen_obs()
 		reward = self.reward.compute_reward()
