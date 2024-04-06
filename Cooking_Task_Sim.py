@@ -222,19 +222,42 @@ class StirReward:
 	def __init__(self, sim):
 		self.stir_points = []
 		self.sim = sim
+		self.first_call = True
+		self.init_dist = 1.
+
+	def check_pepper_pan_contact(self):
+		red_pepper_contact = np.zeros(len(self.sim.objects['red_peppers']),dtype=int)
+		for i in range(len(self.sim.objects['red_peppers'])):
+			contact_points = self.sim.determine_obj_contact(self.sim.objects['red_peppers'][i], self.sim.objects['frying_pan'])
+			if len(contact_points) > 0:
+				red_pepper_contact[i] = 1
+
+		yellow_pepper_contact = np.zeros(len(self.sim.objects['yellow_peppers']),dtype=int)
+		for i in range(len(self.sim.objects['yellow_peppers'])):
+			contact_points = self.sim.determine_obj_contact(self.sim.objects['yellow_peppers'][i], self.sim.objects['frying_pan'])
+			if len(contact_points) > 0:
+				yellow_pepper_contact[i] = 1
+
+		return(red_pepper_contact, yellow_pepper_contact)
 
 	def compute_reward(self):
+		red_pepper_contact, yellow_pepper_contact = self.check_pepper_pan_contact()
 		red_pepper_pos = [pb.getBasePositionAndOrientation(pepper)[0] for pepper in self.sim.objects['red_peppers']]
 		yellow_pepper_pos = [pb.getBasePositionAndOrientation(pepper)[0] for pepper in self.sim.objects['yellow_peppers']]
 		# compute the average distance between red and yellow peppers
 		red_pepper_pos = np.array(red_pepper_pos)
 		yellow_pepper_pos = np.array(yellow_pepper_pos)
+		# Only keep the peppers that are in contact with the pan
+		red_pepper_pos = red_pepper_pos[red_pepper_contact == 1]
+		yellow_pepper_pos = yellow_pepper_pos[yellow_pepper_contact == 1]
 		red_pepper_pos = np.mean(red_pepper_pos, axis = 0)
 		yellow_pepper_pos = np.mean(yellow_pepper_pos, axis = 0)
 		dist = np.linalg.norm(red_pepper_pos - yellow_pepper_pos)
-		reward = 1-dist
+		if self.first_call:
+			self.init_dist = dist
+			self.first_call = False
+		reward = self.init_dist-dist
 		return(reward)
-
 
 reward_models = {}
 reward_models['Stir'] = StirReward
@@ -246,6 +269,7 @@ class CookingEnv:
 		self.task_objs = task_objs[task_id]
 		self.sim = CookingSim(self.task_objs)
 		self.reward = reward_models[task_id](self.sim)
+		self.timeout = 2000
 
 	def gen_obs(self,return_cam = True, return_proprioception = True):
 		obs = {}
@@ -265,13 +289,17 @@ class CookingEnv:
 		self.sim.controller.change_ft_directions(unit_force_axes)
 		obs = self.gen_obs()
 		reward = self.reward.compute_reward()
-		done = False
+		done = self.timeout == 0
+		self.timeout -= 1
 		return(obs, reward, done, {})
 
 	def reset(self):
 		obs = self.gen_obs()
 		self.sim.reset_world_state()
 		return(obs)
+
+	def close(self):
+		self.sim.controller.stop_controller_thread()
 		
 
 
@@ -297,6 +325,8 @@ def run_experiment():
 		print("Reward: ", reward)
 		# print("Observation: ", obs)
 		# print("Done: ", done)
+
+	env.close()
 
 if __name__ == '__main__':
 	run_experiment()
