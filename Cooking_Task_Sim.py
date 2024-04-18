@@ -329,7 +329,9 @@ def run_experiment():
 		# print("Observation: ", obs)
 		# print("Done: ", done)
 		rgb = obs['camera'][2]
+		# image dim: (480, 640, 4)
 		image = np.uint8(rgb)
+		assert False, f"obs dim: {image.shape}\n 3d cords: {goal[0].shape}\n{goal[1]}\n{goal[0][2]}"
 		frames.append(image)
 
 	output_file = './output/output.gif'
