@@ -18,7 +18,7 @@ class BulletRobot(object):
         print(config)
 
         if uid is None:
-            uid = pb.connect(pb.GUI)
+            uid = pb.connect(pb.DIRECT)
         #     uid = pb.connect(pb.SHARED_MEMORY)
         #     if uid < 0:
 

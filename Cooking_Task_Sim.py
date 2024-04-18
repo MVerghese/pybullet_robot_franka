@@ -9,8 +9,10 @@ from pybullet_robot.controllers.os_hyb_ctrl import OSHybridController
 import time
 import matplotlib.pyplot as plt
 import threading
+import imageio
+from tqdm import tqdm 
 
-assets_path = "/home/mverghese/MBLearning/pybullet_robot/assets/"
+assets_path = "./assets/"
 object_info = {}
 object_info['frying_pan'] = {'path': 'assets/frying_pan.urdf', 'scale': 0.5, 'ref_obj': True,'grasp_obj': False,'init_pos':[.5,0.,.5]}
 object_info['spatula'] = {'path': 'assets/spatula.urdf', 'scale': 0.5, 'ref_obj': False,'grasp_obj': True,'init_pos':[.5,0.,.6], 'gripper_offset': [.07,0.,-0.09],'obj_rot':[0,np.pi,np.pi/2]}
@@ -318,15 +320,25 @@ def run_experiment():
 	goal = obs['proprioception']
 	# print(obs)
 	done = False
-	while not done:
+	frames = []
+	for i in tqdm(range(500) ):
 		action = [goal[0], goal[1], np.zeros(6,dtype=int)]
 		goal[0][2] -= 0.01
 		obs, reward, done, _ = env.step(action)
 		print("Reward: ", reward)
 		# print("Observation: ", obs)
 		# print("Done: ", done)
+		rgb = obs['camera'][2]
+		image = np.uint8(rgb)
+		frames.append(image)
 
+	output_file = './output/output.gif'
+	imageio.mimsave(output_file, frames, duration=0.03)
+ 
 	env.close()
+ 
+	output_file = './output/output.gif'
+	imageio.mimsave(output_file, frames, duration=0.03)
 
 if __name__ == '__main__':
 	run_experiment()
