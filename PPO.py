@@ -187,34 +187,33 @@ class PPO:
         total_len = len(self.buffer.states)
         batch_splits = [ ( s, min( s + batch_size, total_len) ) for s in range(0, total_len, batch_size) ]   
 
-        for start_idx, end_idx in batch_splits:
-            # Monte Carlo estimate of returns
-            rewards = []
-            discounted_reward = 0
-            for reward, is_terminal in zip(reversed(self.buffer.rewards[start_idx:end_idx]), reversed(self.buffer.is_terminals[start_idx:end_idx])):
-                if is_terminal:
-                    discounted_reward = 0
-                discounted_reward = reward + (self.gamma * discounted_reward)
-                rewards.insert(0, discounted_reward)
-                
-            # Normalizing the rewards
-            rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
-            rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
-        
-            old_states = torch.squeeze(torch.stack(self.buffer.states[start_idx:end_idx], dim=0)).detach().to(self.device)
-            old_actions = torch.squeeze(torch.stack(self.buffer.actions[start_idx:end_idx], dim=0)).detach().to(self.device)
-            old_logprobs = torch.squeeze(torch.stack(self.buffer.logprobs[start_idx:end_idx], dim=0)).detach().to(self.device)
-            old_state_values = torch.squeeze(torch.stack(self.buffer.state_values[start_idx:end_idx], dim=0)).detach().to(self.device)
+        # Optimize policy for K epochs
+        losses = []
+        for _ in range(self.K_epochs):
+            for start_idx, end_idx in batch_splits:
+                # Monte Carlo estimate of returns
+                rewards = []
+                discounted_reward = 0
+                for reward, is_terminal in zip(reversed(self.buffer.rewards[start_idx:end_idx]), reversed(self.buffer.is_terminals[start_idx:end_idx])):
+                    if is_terminal:
+                        discounted_reward = 0
+                    discounted_reward = reward + (self.gamma * discounted_reward)
+                    rewards.insert(0, discounted_reward)
+                    
+                # Normalizing the rewards
+                rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+                rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+            
+                old_states = torch.squeeze(torch.stack(self.buffer.states[start_idx:end_idx], dim=0)).detach().to(self.device)
+                old_actions = torch.squeeze(torch.stack(self.buffer.actions[start_idx:end_idx], dim=0)).detach().to(self.device)
+                old_logprobs = torch.squeeze(torch.stack(self.buffer.logprobs[start_idx:end_idx], dim=0)).detach().to(self.device)
+                old_state_values = torch.squeeze(torch.stack(self.buffer.state_values[start_idx:end_idx], dim=0)).detach().to(self.device)
 
-            # calculate advantages
-            try:
-                advantages = rewards.detach() - old_state_values.detach()
-            except:
-                assert False, f"{rewards.detach().shape} {old_state_values.detach().shape}"
-
-            # Optimize policy for K epochs
-            losses = []
-            for _ in range(self.K_epochs):
+                # calculate advantages
+                try:
+                    advantages = rewards.detach() - old_state_values.detach()
+                except:
+                    assert False, f"{rewards.detach().shape} {old_state_values.detach().shape}"
 
                 # Evaluating old actions and values
                 logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)

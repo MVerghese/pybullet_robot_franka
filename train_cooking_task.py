@@ -110,11 +110,6 @@ class CookingSim:
 				for i in range(len(self.objects[obj])):
 					self.nouns[self.objects[obj][i]] = obj + str(i)
 
-
-		
-
-
-
 		self.world = SimpleWorld(self.robot, self.objects)
 		pb.changeDynamics(self.world.objects.table, -1,
 						  lateralFriction=0.1, restitution=0.9)
@@ -341,8 +336,26 @@ def run_experiment():
 	# Initialization
 	device = 'cuda:3'
 	env = CookingEnv()
-	IDX = 5
-	exp_directory = f'./../output/{IDX}'
+	IDX = 12
+	use_lavila = True # True: reward = lavila reward + reward
+	lavila_only = False # True reward = lavila reward
+	if  use_lavila:
+		reward_type = 'lavila'
+		if lavila_only:
+			reward_type += 'only' 
+		else: 
+			reward_type += '_env'
+	else:
+		reward_type = 'env_only'
+	
+	# select video reference
+	# RefName = 'STIR_P01_01_39343_39657'
+	# RefName = 'STIR_P28_103_47308_47458'
+	# RefName = 'STIR_P01_105_24995_25492'
+	# RefNames = ['STIR_P01_01_39343_39657', 'STIR_P28_103_47308_47458', 'STIR_P01_105_24995_25492' ]
+	RefNames = [ 'all_STIRRING_train' ]
+	RefName = '_'.join( [ n if i ==0 else '_'.join( n.split('_')[1:])  for i, n in enumerate(RefNames) ])
+	exp_directory = f'./../output/{IDX}_{RefName}_{reward_type}'
 	loss_path = os.path.join(exp_directory, 'loss.txt')
 	return_path = os.path.join(exp_directory, 'return.txt')
 	if not os.path.exists(exp_directory):
@@ -357,8 +370,10 @@ def run_experiment():
 	# initialize a PPO agent
 	action_scalar = 0.1				# reduce action delta by a sclar
 	action_dim = 3
-	update_timestep = episode_len * 3       # update policy every epoch
-	K_epochs = 8               # update policy for K epochs in one PPO update
+	# K_epochs = 2               # update policy for K epochs in one PPO update
+	K_epochs =3               # update policy for K epochs in one PPO update
+	update_timestep = episode_len * K_epochs       # update policy every epoch
+	
 	has_continuous_action_space=True
 	eps_clip = 0.2          # clip parameter for PPO
 	gamma = 0.99            # discount factor
@@ -379,19 +394,27 @@ def run_experiment():
 	])
  
 	# initilaize reward models
-	use_lavila = True # True: reward = lavila reward + reward
-	lavila_only = True # True reward = lavila reward
-	# RefName = 'STIR_P01_01_39343_39657'
-	RefName = 'STIR_P28_103_47308_47458'
 	if use_lavila:
 		frame_num = 16
 		ckpt_path = '/home/yiqiw2/experiment/RoboNLP/lavila_ckpt/clip_openai_timesformer_large.narrator_rephraser.ep_0003.md5sum_c89337.pth'
 		lavila_inter = LaViLa_Interface(ckpt_path, cuda_device= device, clip_length=frame_num )
-		# read .npy from npy_path
-		npy_path = f'/home/yiqiw2/experiment/RoboNLP/VideoReferences/{RefName}.npy'
-		with open(npy_path, 'rb') as f:
-			ref_embedding = torch.from_numpy( np.load(f) ).float().unsqueeze(0).numpy()
-   
+		ref_embeddings = []
+		if 'all' not in RefNames[0]:
+			for refname in RefNames:	
+				npy_path = f'/home/yiqiw2/experiment/RoboNLP/VideoReferences/{refname}.npy'
+				with open(npy_path, 'rb') as f:
+					ref_embeddings.append( torch.from_numpy( np.load(f) ).float().unsqueeze(0).numpy() )
+		else:
+			# use all .npy 
+			path = f"/home/yiqiw2/experiment/RoboNLP/{RefNames[0]}"
+			names = [  n for n in os.listdir(path) if '.npy' in n ]
+			for name in names:
+				npy_path = os.path.join(path, name )
+				with open(npy_path, 'rb') as f:
+					ref_embeddings.append( torch.from_numpy( np.load(f) ).float().unsqueeze(0).numpy() )
+	   
+		ref_embeddings = np.concatenate(ref_embeddings, axis = 0)
+
 	# logging 
 	best_ep_return = 0
 	episode = 0
@@ -438,8 +461,10 @@ def run_experiment():
 				sampled_frames = read_video_frames(frames)
 				sampled_frames = torch.from_numpy(sampled_frames).float().to(device)
 				rollout_embedding = lavila_inter.video_feature( sampled_frames).detach().cpu().numpy()
-				vid_reward = ( rollout_embedding @ ref_embedding.T  ).flatten()[0]
-				if not  lavila_only:
+				# vid_reward = ( rollout_embedding @ ref_embedding.T  ).flatten()[0]
+				vid_reward = max( ( rollout_embedding @ ref_embeddings.T  ).flatten())
+				
+				if not lavila_only:
 					reward += vid_reward
 				else:
 					reward = vid_reward
